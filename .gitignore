@@ -1,0 +1,8 @@
+# Terraform
+infra/.terraform/
+infra/*.tfstate*
+infra/terraform.tfvars
+
+# Env vars
+.env
+.env.*
