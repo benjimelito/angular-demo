@@ -1,0 +1,82 @@
+name: Deploy API (EB)
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      EB_ENV_NAME: ${{ vars.EB_ENV_NAME }}
+      EB_APP_NAME: ${{ vars.EB_APP_NAME }}
+      NODE_VERSION: ${{ vars.NODE_VERSION || '20' }}
+
+    steps:
+      - name: Check required vars
+        run: |
+          if [ -z "${EB_ENV_NAME}" ]; then echo "Missing vars.EB_ENV_NAME"; exit 1; fi
+          if [ -z "${EB_APP_NAME}" ]; then echo "Missing vars.EB_APP_NAME"; exit 1; fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Run Prisma migrations
+        working-directory: api
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma migrate deploy
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::715896377670:role/github-actions-eb
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Package API for Elastic Beanstalk
+        run: |
+          cd api
+          # Zip the API source (exclude node_modules and local env)
+          zip -r ../api-deploy.zip . \
+            -x "node_modules/*" \
+            -x ".env" \
+            -x ".env.*" \
+            -x ".git/*" \
+            -x ".github/*"
+
+      - name: Deploy to Elastic Beanstalk (create version + update env)
+        run: |
+          set -euo pipefail
+
+          VERSION_LABEL="${GITHUB_SHA}"
+          S3_BUCKET="${EB_APP_NAME}-deploy-${GITHUB_RUN_ID}"
+          KEY="api/${VERSION_LABEL}.zip"
+
+          # Create a temporary bucket for this run (simple + robust).
+          # For a more permanent setup, we can instead use one shared bucket name.
+          aws s3 mb "s3://${S3_BUCKET}" --region "${AWS_REGION}" || true
+
+          aws s3 cp api-deploy.zip "s3://${S3_BUCKET}/${KEY}"
+
+          aws elasticbeanstalk create-application-version \
+            --application-name "${EB_APP_NAME}" \
+            --version-label "${VERSION_LABEL}" \
+            --source-bundle S3Bucket="${S3_BUCKET}",S3Key="${KEY}"
+
+          aws elasticbeanstalk update-environment \
+            --environment-name "${EB_ENV_NAME}" \
+            --version-label "${VERSION_LABEL}"

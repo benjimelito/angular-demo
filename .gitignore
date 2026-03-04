@@ -8,6 +8,6 @@ infra/terraform.tfvars
 .env.*
 
 
-# EB
+#
 !.elasticbeanstalk/
 !.elasticbeanstalk/config.yml
