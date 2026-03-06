@@ -35,11 +35,11 @@ jobs:
         working-directory: api
         run: npm ci
 
-      - name: Run Prisma migrations
-        working-directory: api
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx prisma migrate deploy
+      # - name: Run Prisma migrations
+      #   working-directory: api
+      #   env:
+      #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      #   run: npx prisma migrate deploy
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
